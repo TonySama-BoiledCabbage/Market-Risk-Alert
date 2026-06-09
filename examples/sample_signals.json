@@ -1,0 +1,77 @@
+{
+  "signals": [
+    {
+      "id": "cme_fedwatch_higher_for_longer",
+      "title": "CME FedWatch 隐含降息预期显著回撤",
+      "source": "CME FedWatch / Fed Funds futures",
+      "source_tier": "exchange",
+      "category": "macro",
+      "unit": "probability_pct",
+      "value": 70,
+      "previous_value": 50,
+      "risk_direction": "higher_is_risk",
+      "thresholds": { "watch": 10, "strong": 15, "major": 20 },
+      "impact": ["SPY", "QQQ", "NVDA", "TSLA"]
+    },
+    {
+      "id": "nvda_options_skew_widening",
+      "title": "NVDA 期权保护需求上升",
+      "source": "Cboe / OPRA options data",
+      "source_tier": "options",
+      "category": "options",
+      "unit": "percent",
+      "value": 8.5,
+      "previous_value": 3.0,
+      "risk_direction": "higher_is_risk",
+      "thresholds": { "watch": 3, "strong": 5, "major": 8 },
+      "impact": ["NVDA", "SOXX", "QQQ"]
+    },
+    {
+      "id": "tsla_company_margin_alert",
+      "title": "TSLA 公司基本面压力信号：毛利率/交付修正风险",
+      "source": "Company filings / earnings model",
+      "source_tier": "company",
+      "category": "company",
+      "unit": "zscore",
+      "value": 2.1,
+      "previous_value": 0.9,
+      "risk_direction": "higher_is_risk",
+      "impact": ["TSLA", "XLY", "QQQ"]
+    }
+  ],
+  "polymarket": [
+    {
+      "id": "fed_no_cuts_2026",
+      "title": "美联储 2026 年降息 0 次",
+      "category": "macro",
+      "probability": 0.70,
+      "previous_probability": 0.50,
+      "impact": ["SPY", "QQQ", "NVDA", "TSLA"]
+    },
+    {
+      "id": "nvda_largest_market_cap_2026",
+      "title": "2026 年底 NVDA 市值保持全网第一",
+      "category": "nvda",
+      "probability": 0.65,
+      "previous_probability": 0.62,
+      "impact": ["NVDA", "SOXX", "QQQ"]
+    },
+    {
+      "id": "spacex_ipo_2026",
+      "title": "SpaceX 在 2026 年内完成 IPO",
+      "category": "tsla",
+      "probability": 0.45,
+      "previous_probability": 0.39,
+      "impact": ["TSLA", "XLY", "QQQ"]
+    }
+  ],
+  "market": {
+    "SPY": { "change_pct": -0.4 },
+    "QQQ": { "change_pct": -1.5 },
+    "NVDA": { "change_pct": -2.2 },
+    "TSLA": { "change_pct": -3.4 },
+    "SOXX": { "change_pct": -1.0 },
+    "US10Y": { "change_bps": 9 },
+    "VIX": { "change_pct": 10.5 }
+  }
+}

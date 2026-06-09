@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Market Risk Alert</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div>
+          <header class="brand">
+            <h1>Market Risk Alert</h1>
+            <p data-i18n="tagline">A quiet local watch system.</p>
+          </header>
+
+          <nav class="nav" aria-label="Sections">
+            <a class="nav-item active" href="#watchlist" data-section="watchlist" data-i18n="watchlist">Watchlist</a>
+            <a class="nav-item" href="#schedule" data-section="schedule" data-i18n="schedule">Schedule</a>
+            <a class="nav-item" href="#actions" data-section="actions" data-i18n="actions">Actions</a>
+            <a class="nav-item" href="#status" data-section="status" data-i18n="status">Status</a>
+          </nav>
+        </div>
+
+        <footer class="prefs">
+          <button class="pref" id="languageBtn" type="button">
+            <span class="icon">◎</span>
+            <span id="languageLabel">English</span>
+            <span>⌄</span>
+          </button>
+          <button class="pref" id="themeBtn" type="button">
+            <span class="icon">☾</span>
+            <span id="themeLabel">Day mode</span>
+            <span>⌄</span>
+          </button>
+          <div class="pref-rule"></div>
+          <p class="version">v1.0.0</p>
+        </footer>
+      </aside>
+
+      <main class="content">
+        <section id="watchlist" class="panel active-section">
+          <h2 data-i18n="watchlist">Watchlist</h2>
+          <div id="symbolGrid" class="symbol-list"></div>
+
+          <label class="line-input">
+            <span data-i18n="customTickers">Custom tickers</span>
+            <input id="customSymbols" autocomplete="off" />
+            <small data-i18n="comma">Comma separated.</small>
+          </label>
+        </section>
+
+        <section id="schedule" class="panel">
+          <h2 data-i18n="schedule">Schedule</h2>
+          <label class="time-row">
+            <span data-i18n="eveningRecap">Evening recap</span>
+            <input id="eveningTime" autocomplete="off" />
+            <span class="clock">◷</span>
+          </label>
+          <label class="time-row">
+            <span data-i18n="morningAdvice">Morning advice</span>
+            <input id="morningTime" autocomplete="off" />
+            <span class="clock">◷</span>
+          </label>
+        </section>
+
+        <section id="actions" class="panel">
+          <h2 data-i18n="actions">Actions</h2>
+          <div class="action-list">
+            <button id="saveBtn" type="button"><span data-i18n="save">Save</span><span>→</span></button>
+            <button id="eveningBtn" type="button"><span data-i18n="eveningRecap">Evening recap</span><span>→</span></button>
+            <button id="morningBtn" type="button"><span data-i18n="morningAdvice">Morning advice</span><span>→</span></button>
+            <button id="summaryBtn" type="button"><span data-i18n="activateSummary">Activate now (summary)</span><span>→</span></button>
+            <button id="reportsBtn" type="button"><span data-i18n="installSchedule">Install schedule</span><span>→</span></button>
+          </div>
+        </section>
+
+        <section id="status" class="panel">
+          <h2 data-i18n="status">Status</h2>
+          <dl class="status-list">
+            <div><dt data-i18n="telegram">Telegram</dt><dd id="telegramStatus">-</dd></div>
+            <div><dt data-i18n="dataFile">Data file</dt><dd id="dataStatus">-</dd></div>
+            <div><dt data-i18n="lastRun">Last run</dt><dd id="lastRun">-</dd></div>
+          </dl>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
