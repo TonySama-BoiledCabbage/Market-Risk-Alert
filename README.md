@@ -100,6 +100,68 @@ Current schedule uses America/Toronto daylight saving time:
 
 When daylight saving time changes, update the UTC cron times in the workflow.
 
+## 2.6 Optional Telegram Menu
+
+For personal use, the simplest interactive menu is a tiny Cloudflare Worker:
+
+```text
+Telegram inline buttons -> Cloudflare Worker -> GitHub Actions -> Telegram report
+```
+
+The Worker code lives in:
+
+```text
+cloudflare-worker/telegram-menu-worker.js
+```
+
+Minimal menu features:
+
+- `/start` opens the main menu.
+- `Dashboard` shows the current simple setup.
+- `立即触发` can trigger the evening or morning report.
+- `关注标的` shows the current watchlist.
+- `汇报时间` shows the current schedule.
+- `状态` shows the integration status.
+
+Secrets must be set in Cloudflare, not committed to Git:
+
+```text
+TELEGRAM_BOT_TOKEN
+TELEGRAM_CHAT_ID
+GITHUB_PAT
+TELEGRAM_WEBHOOK_SECRET
+```
+
+`GITHUB_PAT` should be a fine-grained GitHub token with access only to this
+repository and `Actions: Read and write` permission. It is used only to trigger
+the existing GitHub Actions workflow.
+
+Create a local Worker config from the example:
+
+```powershell
+cd cloudflare-worker
+copy wrangler.toml.example wrangler.toml
+```
+
+Then deploy with Wrangler:
+
+```powershell
+npx wrangler login
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+npx wrangler secret put TELEGRAM_CHAT_ID
+npx wrangler secret put GITHUB_PAT
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
+npx wrangler deploy
+```
+
+After deployment, set the Telegram webhook:
+
+```text
+https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=<YOUR_WORKER_URL>&secret_token=<YOUR_WEBHOOK_SECRET>&allowed_updates=["message","callback_query"]
+```
+
+Send `/start` to your bot after the webhook is set.
+
 ## 3. Input Format
 
 Your data scraper should output a JSON snapshot like:

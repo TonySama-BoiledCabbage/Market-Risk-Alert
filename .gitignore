@@ -1,4 +1,7 @@
 .env
+cloudflare-worker/.dev.vars*
+cloudflare-worker/.env*
+cloudflare-worker/.wrangler/
 state/
 logs/
 archive/

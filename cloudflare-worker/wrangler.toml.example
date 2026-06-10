@@ -1,0 +1,12 @@
+name = "market-risk-alert-telegram-menu"
+main = "telegram-menu-worker.js"
+compatibility_date = "2026-06-10"
+
+[vars]
+GITHUB_OWNER = "TonySama-BoiledCabbage"
+GITHUB_REPO = "Market-Risk-Alert"
+GITHUB_WORKFLOW = "telegram-reports.yml"
+GITHUB_REF = "main"
+WATCH_SYMBOLS = "SPY, QQQ, NVDA, TSLA, SOXX"
+EVENING_TIME = "22:00"
+MORNING_TIME = "09:45"
