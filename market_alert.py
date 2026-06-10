@@ -35,6 +35,13 @@ DEFAULT_QUOTE_SYMBOLS = ("SPY", "QQQ", "NVDA", "TSLA", "SOXX")
 DEFAULT_WATCH_SYMBOLS = ("SPY", "QQQ", "NVDA", "TSLA", "SOXX", "XLK", "XLY", "US10Y", "US2Y", "VIX")
 OI_WATCH_THRESHOLD_PCT = 10
 OI_ALERT_THRESHOLD_PCT = 20
+PRICE_ALERT_THRESHOLDS_PCT = {
+    "SPY": (1.2, 2.0),
+    "QQQ": (1.5, 2.5),
+    "SOXX": (2.0, 3.5),
+    "NVDA": (3.0, 5.0),
+    "TSLA": (3.5, 6.0),
+}
 
 
 def configure_console_encoding() -> None:
@@ -219,26 +226,76 @@ def fetch_alpha_vantage_quotes(symbols: list[str], api_key: str) -> dict[str, di
     return quotes
 
 
-def enrich_market_data(snapshot: dict[str, Any], fetch_alpha: bool) -> None:
-    if not fetch_alpha:
-        return
+def fetch_yahoo_quotes(symbols: list[str]) -> dict[str, dict[str, float]]:
+    quotes: dict[str, dict[str, float]] = {}
+    for symbol in symbols:
+        encoded_symbol = urllib.parse.quote(symbol)
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{encoded_symbol}?range=1d&interval=5m"
+        request = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 market-risk-alert/1.0",
+                "Accept": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            print(f"Quote fetch skipped for {symbol}: {exc}", file=sys.stderr)
+            continue
 
-    api_key = os.getenv("ALPHAVANTAGE_API_KEY")
-    if not api_key:
-        raise RuntimeError("Set ALPHAVANTAGE_API_KEY before using --fetch-alpha-vantage")
+        result = payload.get("chart", {}).get("result") or []
+        if not result:
+            continue
 
-    symbols = os.getenv("QUOTE_SYMBOLS", ",".join(DEFAULT_QUOTE_SYMBOLS))
-    quote_symbols = [item.strip().upper() for item in symbols.split(",") if item.strip()]
-    fetched = fetch_alpha_vantage_quotes(quote_symbols, api_key)
+        meta = result[0].get("meta", {})
+        price = meta.get("regularMarketPrice")
+        previous_close = meta.get("chartPreviousClose") or meta.get("previousClose")
+        if price is None or previous_close is None:
+            continue
 
+        price = float(price)
+        previous_close = float(previous_close)
+        if previous_close <= 0:
+            continue
+
+        quotes[symbol] = {
+            "price": price,
+            "previous_close": previous_close,
+            "change_pct": ((price - previous_close) / previous_close) * 100,
+        }
+
+        time.sleep(0.2)
+    return quotes
+
+
+def merge_market_quotes(snapshot: dict[str, Any], fetched: dict[str, dict[str, float]]) -> None:
     market = snapshot.setdefault("market", {})
     if not isinstance(market, dict):
-        raise ValueError("snapshot.market must be an object when --fetch-alpha-vantage is used")
+        raise ValueError("snapshot.market must be an object when fetching quote data")
 
     for symbol, values in fetched.items():
         current = market.setdefault(symbol, {})
         if isinstance(current, dict):
             current.update(values)
+
+
+def enrich_market_data(snapshot: dict[str, Any], fetch_alpha: bool, fetch_yahoo: bool) -> None:
+    if not fetch_alpha and not fetch_yahoo:
+        return
+
+    symbols = os.getenv("QUOTE_SYMBOLS", ",".join(DEFAULT_QUOTE_SYMBOLS))
+    quote_symbols = [item.strip().upper() for item in symbols.split(",") if item.strip()]
+
+    if fetch_yahoo:
+        merge_market_quotes(snapshot, fetch_yahoo_quotes(quote_symbols))
+
+    if fetch_alpha:
+        api_key = os.getenv("ALPHAVANTAGE_API_KEY")
+        if not api_key:
+            raise RuntimeError("Set ALPHAVANTAGE_API_KEY before using --fetch-alpha-vantage")
+        merge_market_quotes(snapshot, fetch_alpha_vantage_quotes(quote_symbols, api_key))
 
 
 def market_confirmations(market: dict[str, Any], tags: set[str]) -> tuple[int, list[str]]:
@@ -434,6 +491,63 @@ def score_oi_signals(snapshot: dict[str, Any]) -> list[EventScore]:
     return results
 
 
+def score_price_signals(snapshot: dict[str, Any]) -> list[EventScore]:
+    market = snapshot.get("market", {})
+    if not isinstance(market, dict):
+        return []
+
+    results: list[EventScore] = []
+    for symbol in get_watch_symbols(snapshot):
+        thresholds = PRICE_ALERT_THRESHOLDS_PCT.get(symbol)
+        if thresholds is None:
+            continue
+
+        change = get_market_float(market, symbol, "change_pct")
+        if change is None:
+            continue
+
+        watch_threshold, alert_threshold = thresholds
+        absolute_change = abs(change)
+        if absolute_change < watch_threshold:
+            continue
+
+        score = 66 if absolute_change >= alert_threshold else 44
+        if absolute_change >= alert_threshold * 1.6:
+            score = 82
+
+        direction = "上涨" if change > 0 else "下跌"
+        if change > 0:
+            read = "价格快速上行，说明资金短线承接增强；若没有对应基本面确认，仍需防止追高。"
+        else:
+            read = "价格快速下行，说明风险偏好或个股承接正在转弱；需要优先确认是否扩散到同类资产。"
+
+        source_data = market.get(symbol, {})
+        price_text = ""
+        if isinstance(source_data, dict) and source_data.get("price") is not None:
+            price_text = f"，当前价 {float(source_data['price']):.2f}"
+
+        results.append(
+            EventScore(
+                event_id=f"{symbol.lower()}_price_move",
+                title=f"{symbol} 日内价格{direction} {absolute_change:.1f}%",
+                source="Delayed market quote",
+                source_tier="market",
+                value_text=f"{change:+.1f}%{price_text}",
+                previous_value_text=None,
+                delta_text=f"{change:+.1f}%",
+                score=score,
+                severity=severity_for(score),
+                reasons=[
+                    f"{symbol} 日内波动 {change:+.1f}%，超过 {watch_threshold:.1f}% 观察阈值。",
+                    read,
+                    "这是价格层面的自动异动提醒，后续应结合指数、板块和消息面确认。",
+                ],
+                suggested_action=f"检查 {symbol} 是否与 SPY/QQQ/SOXX 同向；若个股独立走弱，优先降低短线风险暴露。",
+            )
+        )
+    return results
+
+
 def event_tags(event: dict[str, Any]) -> set[str]:
     tags = {str(event.get("category", "")).lower()}
     for key in ("tags", "impact"):
@@ -571,6 +685,7 @@ def score_events(snapshot: dict[str, Any], previous: dict[str, Any]) -> list[Eve
             )
         )
 
+    results.extend(score_price_signals(snapshot))
     results.extend(score_oi_signals(snapshot))
     return sorted(results, key=lambda item: item.score, reverse=True)
 
@@ -800,6 +915,7 @@ def main() -> int:
     parser.add_argument("--force", action="store_true", help="Send even if score is below min-score.")
     parser.add_argument("--report-mode", choices=["alert", "evening", "morning"], default="alert", help="Send scheduled reports regardless of thresholds.")
     parser.add_argument("--fetch-alpha-vantage", action="store_true", help="Fill equity change_pct from Alpha Vantage.")
+    parser.add_argument("--fetch-yahoo", action="store_true", help="Fill delayed equity quote data from Yahoo Chart without an API key.")
     parser.add_argument("--archive-dir", type=Path, default=DEFAULT_ARCHIVE_DIR, help="Folder for snapshot, score, and report archives.")
     parser.add_argument("--dedupe-state", type=Path, default=DEFAULT_DEDUPE_STATE_PATH, help="Path to alert dedupe state.")
     parser.add_argument("--dedupe-minutes", type=int, default=int(os.getenv("ALERT_DEDUPE_MINUTES", DEFAULT_DEDUPE_MINUTES)), help="Suppress identical alert messages within this many minutes.")
@@ -811,7 +927,7 @@ def main() -> int:
     load_dotenv(args.env)
 
     snapshot = read_json(args.input)
-    enrich_market_data(snapshot, args.fetch_alpha_vantage)
+    enrich_market_data(snapshot, args.fetch_alpha_vantage, args.fetch_yahoo)
     previous = read_json(args.state) if args.state.exists() else {}
     results = score_events(snapshot, previous)
     if args.report_mode == "alert":

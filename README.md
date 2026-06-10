@@ -92,6 +92,7 @@ It supports:
 - Manual test from the GitHub `Actions` tab
 - Daily evening recap
 - Weekday morning advice
+- Cloud alert monitor for major price/OI moves
 
 Current schedule uses America/Toronto daylight saving time:
 
@@ -99,6 +100,22 @@ Current schedule uses America/Toronto daylight saving time:
 - `09:45` local morning advice = `13:45 UTC`
 
 When daylight saving time changes, update the UTC cron times in the workflow.
+
+Cloud anomaly monitoring is handled by:
+
+```text
+.github/workflows/market-alert-monitor.yml
+```
+
+It runs about every 30 minutes on weekdays during rough US market hours, fetches
+delayed no-key quote data, and calls:
+
+```text
+python market_alert.py --report-mode alert --fetch-yahoo --min-score 60
+```
+
+Only high enough alerts are sent. Identical alert messages are deduplicated for
+24 hours using the restored `state/` cache in GitHub Actions.
 
 ## 2.6 Optional Telegram Menu
 
@@ -118,7 +135,7 @@ Minimal menu features:
 
 - `/start` opens the main menu.
 - `Dashboard` shows the current simple setup.
-- `立即触发` can trigger the evening or morning report.
+- `立即触发` can trigger anomaly detection, the evening report, or the morning report.
 - `关注标的` shows the current watchlist.
 - `汇报时间` shows the current schedule.
 - `状态` shows the integration status.

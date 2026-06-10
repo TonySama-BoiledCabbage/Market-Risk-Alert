@@ -1,0 +1,76 @@
+name: Market Alert Monitor
+
+on:
+  workflow_dispatch:
+    inputs:
+      send_to_telegram:
+        description: "Send to Telegram if an alert is triggered"
+        required: true
+        default: true
+        type: boolean
+      min_score:
+        description: "Minimum alert score"
+        required: true
+        default: "60"
+  schedule:
+    # Weekdays, roughly US market hours in America/Toronto daylight saving time.
+    # GitHub cron uses UTC. Adjust after daylight saving time changes.
+    - cron: "*/30 13-20 * * 1-5"
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      WATCH_SYMBOLS: SPY,QQQ,NVDA,TSLA,SOXX
+      QUOTE_SYMBOLS: SPY,QQQ,NVDA,TSLA,SOXX
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore monitor state
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: market-alert-state-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            market-alert-state-${{ runner.os }}-
+
+      - name: Run alert monitor
+        shell: bash
+        run: |
+          MIN_SCORE="60"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MIN_SCORE="${{ inputs.min_score }}"
+          fi
+
+          ARGS="--input examples/cloud_seed_signals.json --report-mode alert --fetch-yahoo --min-score $MIN_SCORE --dedupe-minutes 1440"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send_to_telegram }}" != "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+
+          python market_alert.py $ARGS
+
+      - name: Save monitor state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: market-alert-state-${{ runner.os }}-${{ github.run_id }}

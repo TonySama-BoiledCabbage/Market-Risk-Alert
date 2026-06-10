@@ -9,6 +9,7 @@ on:
         default: "evening"
         type: choice
         options:
+          - alert
           - evening
           - morning
       input_file:
@@ -73,7 +74,9 @@ jobs:
         run: |
           ARGS="--input ${{ steps.mode.outputs.input_file }} --report-mode ${{ steps.mode.outputs.report_mode }}"
 
-          if [ -n "$ALPHAVANTAGE_API_KEY" ]; then
+          if [ "${{ steps.mode.outputs.report_mode }}" = "alert" ]; then
+            ARGS="$ARGS --fetch-yahoo --min-score 60"
+          elif [ -n "$ALPHAVANTAGE_API_KEY" ]; then
             ARGS="$ARGS --fetch-alpha-vantage"
           fi
 

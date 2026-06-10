@@ -82,14 +82,19 @@ async function handleCallback(query, env, chatId) {
     return;
   }
 
-  if (data === "trigger:evening" || data === "trigger:morning") {
+  if (data === "trigger:alert" || data === "trigger:evening" || data === "trigger:morning") {
     const reportMode = data.split(":")[1];
     await triggerGithubReport(env, reportMode);
+    const reportName = {
+      alert: "异动检测",
+      evening: "晚间复盘",
+      morning: "开盘建议",
+    }[reportMode];
     await editMessage(
       env,
       chatId,
       messageId,
-      `已请求 GitHub Actions 生成 ${reportMode === "evening" ? "晚间复盘" : "开盘建议"}。\n\n通常 10-30 秒后 Telegram 会收到报告。`,
+      `已请求 GitHub Actions 生成 ${reportName}。\n\n如果达到提醒阈值，通常 10-30 秒后 Telegram 会收到报告。`,
       backKeyboard(),
     );
   }
@@ -172,6 +177,7 @@ function mainMenuKeyboard() {
 function triggerKeyboard() {
   return {
     inline_keyboard: [
+      [{ text: "异动检测", callback_data: "trigger:alert" }],
       [{ text: "晚间复盘", callback_data: "trigger:evening" }],
       [{ text: "开盘建议", callback_data: "trigger:morning" }],
       [{ text: "返回", callback_data: "main" }],
