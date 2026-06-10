@@ -10,6 +10,17 @@ It combines:
 - Optional alternative event signals such as Polymarket, treated as secondary context
 - Optional Alpha Vantage quote data for SPY, QQQ, NVDA, TSLA, and SOXX
 
+## Open-Source Safety
+
+This repository is safe to publish as an open-source project.
+
+- Real credentials are never committed.
+- `.env` is ignored by Git and stays local.
+- `.env.example` contains placeholders only.
+- GitHub Actions reads secrets from each user's own repository settings.
+- Anyone who forks or downloads this project must create their own Telegram bot
+  and set their own `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
+
 ## 1. Create Telegram Bot
 
 1. Open Telegram and chat with `@BotFather`.
