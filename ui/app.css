@@ -171,6 +171,68 @@ body {
   font-size: 26px;
 }
 
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.ticker-card {
+  position: relative;
+  min-height: 142px;
+  padding: 16px 15px 14px;
+  border: 1px solid var(--soft-line);
+  background: transparent;
+}
+
+.ticker-card.is-alert::before,
+.ticker-card.is-watch::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--active-glow);
+  pointer-events: none;
+}
+
+.ticker-head {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.ticker-symbol {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 24px;
+  color: var(--fg);
+}
+
+.ticker-note {
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.ticker-card.is-alert .ticker-note {
+  color: var(--fg);
+}
+
+.metric-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 18px;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.metric-row strong {
+  color: var(--fg);
+  font-weight: 400;
+}
+
 .symbol-list {
   display: grid;
   grid-template-columns: 1fr;
@@ -301,5 +363,9 @@ input[type="checkbox"] {
 
   .content {
     padding: 28px 23px 54px;
+  }
+
+  .card-grid {
+    grid-template-columns: 1fr;
   }
 }

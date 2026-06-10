@@ -1,0 +1,81 @@
+name: Telegram Reports
+
+on:
+  workflow_dispatch:
+    inputs:
+      report_mode:
+        description: "Report type"
+        required: true
+        default: "evening"
+        type: choice
+        options:
+          - evening
+          - morning
+      input_file:
+        description: "Input JSON path"
+        required: true
+        default: "examples/cloud_seed_signals.json"
+      send_to_telegram:
+        description: "Send to Telegram"
+        required: true
+        default: true
+        type: boolean
+  schedule:
+    # America/Toronto daylight saving time: 22:00 local = 02:00 UTC.
+    - cron: "0 2 * * *"
+    # America/Toronto daylight saving time: 09:45 local = 13:45 UTC.
+    - cron: "45 13 * * 1-5"
+
+permissions:
+  contents: read
+
+jobs:
+  send-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+      WATCH_SYMBOLS: SPY,QQQ,NVDA,TSLA,SOXX,US10Y,VIX
+      QUOTE_SYMBOLS: SPY,QQQ,NVDA,TSLA,SOXX
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Choose report mode
+        id: mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "report_mode=${{ inputs.report_mode }}" >> "$GITHUB_OUTPUT"
+            echo "input_file=${{ inputs.input_file }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "0 2 * * *" ]; then
+            echo "report_mode=evening" >> "$GITHUB_OUTPUT"
+            echo "input_file=examples/cloud_seed_signals.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "report_mode=morning" >> "$GITHUB_OUTPUT"
+            echo "input_file=examples/cloud_seed_signals.json" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send Telegram report
+        shell: bash
+        run: |
+          ARGS="--input ${{ steps.mode.outputs.input_file }} --report-mode ${{ steps.mode.outputs.report_mode }}"
+
+          if [ -n "$ALPHAVANTAGE_API_KEY" ]; then
+            ARGS="$ARGS --fetch-alpha-vantage"
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send_to_telegram }}" != "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+
+          python market_alert.py $ARGS

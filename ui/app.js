@@ -12,6 +12,7 @@ const state = {
   },
   equity: [],
   macro: [],
+  dashboardCards: [],
   language: localStorage.getItem("mra.language") || "en",
   theme: localStorage.getItem("mra.theme") || "night",
   lastRun: localStorage.getItem("mra.lastRun") || "-",
@@ -22,6 +23,7 @@ const $ = (id) => document.getElementById(id);
 const copy = {
   en: {
     tagline: "A quiet local watch system.",
+    dashboard: "Dashboard",
     watchlist: "Watchlist",
     schedule: "Schedule",
     actions: "Actions",
@@ -48,9 +50,17 @@ const copy = {
     dayMode: "Day mode",
     nightMode: "Night mode",
     sentAt2200: "Sent at 22:00",
+    price: "Price",
+    day: "Day",
+    oi: "OI",
+    oiChange: "OI change",
+    calm: "Calm",
+    oiWatch: "OI watch",
+    oiAlert: "OI alert",
   },
   zh: {
     tagline: "安静的本地金融观察工具。",
+    dashboard: "仪表盘",
     watchlist: "关注标的",
     schedule: "时间安排",
     actions: "操作",
@@ -77,6 +87,13 @@ const copy = {
     dayMode: "日间模式",
     nightMode: "夜间模式",
     sentAt2200: "22:00 已发送",
+    price: "价格",
+    day: "日内",
+    oi: "OI",
+    oiChange: "OI变化",
+    calm: "平稳",
+    oiWatch: "OI观察",
+    oiAlert: "OI提醒",
   },
 };
 
@@ -124,6 +141,44 @@ function renderSymbols() {
   });
 }
 
+function formatNumber(value, suffix = "") {
+  if (value === null || value === undefined || value === "") return "-";
+  const number = Number(value);
+  if (Number.isNaN(number)) return String(value);
+  if (Math.abs(number) >= 1000 && suffix === "") return Math.round(number).toLocaleString();
+  return `${number.toFixed(suffix ? 1 : 2)}${suffix}`;
+}
+
+function oiNote(card) {
+  if (card.alert) return t("oiAlert");
+  if (card.watch) return t("oiWatch");
+  return t("calm");
+}
+
+function renderCards() {
+  const grid = $("cardGrid");
+  grid.innerHTML = "";
+  const cards = state.dashboardCards.length
+    ? state.dashboardCards
+    : (state.settings.symbols || ["NVDA", "TSLA", "SPY", "QQQ"]).map((symbol) => ({ symbol }));
+
+  cards.forEach((card) => {
+    const node = document.createElement("article");
+    node.className = `ticker-card ${card.alert ? "is-alert" : card.watch ? "is-watch" : ""}`;
+    node.innerHTML = `
+      <div class="ticker-head">
+        <div class="ticker-symbol">${card.symbol}</div>
+        <div class="ticker-note">${oiNote(card)}</div>
+      </div>
+      <div class="metric-row"><span>${t("price")}</span><strong>${formatNumber(card.price)}</strong></div>
+      <div class="metric-row"><span>${t("day")}</span><strong>${formatNumber(card.change_pct, "%")}</strong></div>
+      <div class="metric-row"><span>${t("oi")}</span><strong>${formatNumber(card.open_interest)}</strong></div>
+      <div class="metric-row"><span>${t("oiChange")}</span><strong>${formatNumber(card.oi_change_pct, "%")}</strong></div>
+    `;
+    grid.appendChild(node);
+  });
+}
+
 function renderText() {
   document.documentElement.lang = state.language === "zh" ? "zh-Hans" : "en";
   document.documentElement.dataset.theme = state.theme === "day" ? "day" : "night";
@@ -144,6 +199,7 @@ function render() {
   $("lastRun").textContent = state.lastRun;
   renderSymbols();
   renderText();
+  renderCards();
 }
 
 async function load() {
@@ -154,10 +210,12 @@ async function load() {
     state.macro = payload.macro_symbols;
     state.telegramConfigured = payload.telegram_configured;
     state.sampleExists = payload.sample_exists;
+    state.dashboardCards = payload.dashboard_cards || [];
     if (payload.last_run) state.lastRun = payload.last_run;
   } catch (error) {
     state.telegramConfigured = false;
     state.sampleExists = false;
+    state.dashboardCards = [];
     state.lastRun = location.protocol === "file:" ? "Open localhost client" : error.message;
   }
   render();

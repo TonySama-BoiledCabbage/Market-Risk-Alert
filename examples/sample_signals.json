@@ -66,11 +66,11 @@
     }
   ],
   "market": {
-    "SPY": { "change_pct": -0.4 },
-    "QQQ": { "change_pct": -1.5 },
-    "NVDA": { "change_pct": -2.2 },
-    "TSLA": { "change_pct": -3.4 },
-    "SOXX": { "change_pct": -1.0 },
+    "SPY": { "change_pct": -0.4, "open_interest": 18342000, "oi_change_pct": 4.2 },
+    "QQQ": { "change_pct": -1.5, "open_interest": 21688000, "oi_change_pct": 11.4 },
+    "NVDA": { "change_pct": -2.2, "open_interest": 6821000, "oi_change_pct": 24.6 },
+    "TSLA": { "change_pct": -3.4, "open_interest": 9475000, "oi_change_pct": 18.2 },
+    "SOXX": { "change_pct": -1.0, "open_interest": 844000, "oi_change_pct": 7.8 },
     "US10Y": { "change_bps": 9 },
     "VIX": { "change_pct": 10.5 }
   }

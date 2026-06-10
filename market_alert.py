@@ -12,6 +12,7 @@ confirmation signals, and send Telegram alerts.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -19,17 +20,21 @@ import time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 
 DEFAULT_STATE_PATH = Path("state/last_snapshot.json")
+DEFAULT_DEDUPE_STATE_PATH = Path("state/last_sent_alert.json")
 DEFAULT_ARCHIVE_DIR = Path("archive")
 DEFAULT_MIN_SCORE = 40
 DEFAULT_HIGH_SCORE = 80
+DEFAULT_DEDUPE_MINUTES = 1440
 DEFAULT_QUOTE_SYMBOLS = ("SPY", "QQQ", "NVDA", "TSLA", "SOXX")
 DEFAULT_WATCH_SYMBOLS = ("SPY", "QQQ", "NVDA", "TSLA", "SOXX", "XLK", "XLY", "US10Y", "US2Y", "VIX")
+OI_WATCH_THRESHOLD_PCT = 10
+OI_ALERT_THRESHOLD_PCT = 20
 
 
 def configure_console_encoding() -> None:
@@ -71,6 +76,15 @@ def read_json(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return data
+
+
+def read_json_or_empty(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        return read_json(path)
+    except Exception:
+        return {}
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
@@ -157,6 +171,28 @@ def get_market_float(market: dict[str, Any], symbol: str, field: str) -> float |
     if value is None:
         return None
     return float(str(value).replace("%", ""))
+
+
+def market_oi_change(market: dict[str, Any], symbol: str) -> float | None:
+    item = market.get(symbol)
+    if not isinstance(item, dict):
+        return None
+    for field in ("oi_change_pct", "open_interest_change_pct", "options_oi_change_pct"):
+        value = item.get(field)
+        if value is not None:
+            return float(str(value).replace("%", ""))
+    return None
+
+
+def get_watch_symbols(snapshot: dict[str, Any]) -> tuple[str, ...]:
+    raw = snapshot.get("watch_symbols") or os.getenv("WATCH_SYMBOLS")
+    if isinstance(raw, list):
+        symbols = [str(item).strip().upper() for item in raw if str(item).strip()]
+    elif isinstance(raw, str):
+        symbols = [item.strip().upper() for item in raw.split(",") if item.strip()]
+    else:
+        symbols = list(DEFAULT_WATCH_SYMBOLS)
+    return tuple(dict.fromkeys(symbols))
 
 
 def fetch_alpha_vantage_quotes(symbols: list[str], api_key: str) -> dict[str, dict[str, float]]:
@@ -358,6 +394,46 @@ def professional_signal_score(signal: dict[str, Any], previous_signal: dict[str,
     return max(0, min(100, score)), reasons, value, previous_value, delta
 
 
+def score_oi_signals(snapshot: dict[str, Any]) -> list[EventScore]:
+    market = snapshot.get("market", {})
+    if not isinstance(market, dict):
+        return []
+
+    results: list[EventScore] = []
+    for symbol in get_watch_symbols(snapshot):
+        change = market_oi_change(market, symbol)
+        if change is None or abs(change) < OI_WATCH_THRESHOLD_PCT:
+            continue
+
+        absolute_change = abs(change)
+        score = 72 if absolute_change >= OI_ALERT_THRESHOLD_PCT else 48
+        direction = "上升" if change > 0 else "下降"
+        if change > 0:
+            read = "期权参与度明显升高，通常代表资金开始更集中地表达方向或保护需求"
+        else:
+            read = "期权参与度明显回落，说明相关仓位可能正在撤出或到期"
+
+        results.append(
+            EventScore(
+                event_id=f"{symbol.lower()}_oi_change",
+                title=f"{symbol} 期权 OI {direction} {absolute_change:.1f}%",
+                source="Options open interest",
+                source_tier="options",
+                value_text=f"{change:+.1f}%",
+                previous_value_text=None,
+                delta_text=f"{change:+.1f}%",
+                score=score,
+                severity=severity_for(score),
+                reasons=[
+                    f"{symbol} 期权未平仓量变化 {change:+.1f}%，超过 {OI_WATCH_THRESHOLD_PCT}% 观察阈值",
+                    read,
+                ],
+                suggested_action=f"关注 {symbol} 的价格方向是否与 OI 变化同步；若价格走弱且 OI 上升，优先考虑风险保护。",
+            )
+        )
+    return results
+
+
 def event_tags(event: dict[str, Any]) -> set[str]:
     tags = {str(event.get("category", "")).lower()}
     for key in ("tags", "impact"):
@@ -495,6 +571,7 @@ def score_events(snapshot: dict[str, Any], previous: dict[str, Any]) -> list[Eve
             )
         )
 
+    results.extend(score_oi_signals(snapshot))
     return sorted(results, key=lambda item: item.score, reverse=True)
 
 
@@ -551,17 +628,6 @@ def format_market_line(symbol: str, data: Any) -> str | None:
     if not pieces:
         return None
     return f"{symbol}: {' / '.join(pieces)}"
-
-
-def get_watch_symbols(snapshot: dict[str, Any]) -> tuple[str, ...]:
-    raw = snapshot.get("watch_symbols") or os.getenv("WATCH_SYMBOLS")
-    if isinstance(raw, list):
-        symbols = [str(item).strip().upper() for item in raw if str(item).strip()]
-    elif isinstance(raw, str):
-        symbols = [item.strip().upper() for item in raw.split(",") if item.strip()]
-    else:
-        symbols = list(DEFAULT_WATCH_SYMBOLS)
-    return tuple(dict.fromkeys(symbols))
 
 
 def portfolio_bias(results: list[EventScore]) -> str:
@@ -685,6 +751,44 @@ def archive_run(snapshot: dict[str, Any], results: list[EventScore], message: st
     write_text(run_dir / f"{prefix}-telegram.txt", message)
 
 
+def alert_fingerprint(message: str) -> str:
+    return hashlib.sha256(message.encode("utf-8")).hexdigest()
+
+
+def duplicate_alert_notice(dedupe_state: dict[str, Any], dedupe_minutes: int) -> str:
+    sent_at = dedupe_state.get("sent_at", "unknown")
+    return f"Duplicate alert suppressed. Same alert was sent at {sent_at}; dedupe window is {dedupe_minutes} minutes."
+
+
+def should_suppress_duplicate_alert(fingerprint: str, dedupe_path: Path, dedupe_minutes: int) -> tuple[bool, dict[str, Any]]:
+    state = read_json_or_empty(dedupe_path)
+    if state.get("fingerprint") != fingerprint:
+        return False, state
+
+    sent_at_raw = state.get("sent_at")
+    if not sent_at_raw:
+        return False, state
+    try:
+        sent_at = datetime.fromisoformat(sent_at_raw)
+    except ValueError:
+        return False, state
+
+    if sent_at.tzinfo is None:
+        sent_at = sent_at.replace(tzinfo=timezone.utc)
+    age = datetime.now(timezone.utc) - sent_at.astimezone(timezone.utc)
+    return age <= timedelta(minutes=dedupe_minutes), state
+
+
+def record_sent_alert(fingerprint: str, dedupe_path: Path) -> None:
+    write_json(
+        dedupe_path,
+        {
+            "fingerprint": fingerprint,
+            "sent_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+
 def main() -> int:
     configure_console_encoding()
 
@@ -697,6 +801,9 @@ def main() -> int:
     parser.add_argument("--report-mode", choices=["alert", "evening", "morning"], default="alert", help="Send scheduled reports regardless of thresholds.")
     parser.add_argument("--fetch-alpha-vantage", action="store_true", help="Fill equity change_pct from Alpha Vantage.")
     parser.add_argument("--archive-dir", type=Path, default=DEFAULT_ARCHIVE_DIR, help="Folder for snapshot, score, and report archives.")
+    parser.add_argument("--dedupe-state", type=Path, default=DEFAULT_DEDUPE_STATE_PATH, help="Path to alert dedupe state.")
+    parser.add_argument("--dedupe-minutes", type=int, default=int(os.getenv("ALERT_DEDUPE_MINUTES", DEFAULT_DEDUPE_MINUTES)), help="Suppress identical alert messages within this many minutes.")
+    parser.add_argument("--no-dedupe", action="store_true", help="Disable duplicate alert suppression.")
     parser.add_argument("--no-archive", action="store_true", help="Disable run archive files.")
     parser.add_argument("--env", type=Path, default=Path(".env"), help="Optional .env file.")
     args = parser.parse_args()
@@ -715,10 +822,33 @@ def main() -> int:
         message = format_report(snapshot, results, args.report_mode)
         should_send = True
 
-    if not args.no_archive:
+    duplicate_suppressed = False
+    fingerprint = None
+    duplicate_notice = ""
+    if (
+        args.report_mode == "alert"
+        and should_send
+        and not args.force
+        and not args.no_dedupe
+        and not args.dry_run
+        and args.dedupe_minutes > 0
+    ):
+        fingerprint = alert_fingerprint(message)
+        duplicate_suppressed, dedupe_state = should_suppress_duplicate_alert(
+            fingerprint,
+            args.dedupe_state,
+            args.dedupe_minutes,
+        )
+        if duplicate_suppressed:
+            should_send = False
+            duplicate_notice = duplicate_alert_notice(dedupe_state, args.dedupe_minutes)
+
+    if not args.no_archive and not duplicate_suppressed:
         archive_run(snapshot, results, message, args.report_mode, args.archive_dir)
 
-    if args.dry_run or not should_send:
+    if duplicate_suppressed:
+        print(duplicate_notice)
+    elif args.dry_run or not should_send:
         print(message)
     else:
         token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -726,6 +856,8 @@ def main() -> int:
         if not token or not chat_id:
             raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in environment or .env")
         send_telegram(message, token, chat_id)
+        if args.report_mode == "alert" and fingerprint is not None:
+            record_sent_alert(fingerprint, args.dedupe_state)
         print(f"Telegram alert sent at {int(time.time())}.")
 
     save_current_snapshot(snapshot, args.state)

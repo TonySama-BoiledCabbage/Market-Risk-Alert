@@ -16,7 +16,8 @@
           </header>
 
           <nav class="nav" aria-label="Sections">
-            <a class="nav-item active" href="#watchlist" data-section="watchlist" data-i18n="watchlist">Watchlist</a>
+            <a class="nav-item active" href="#dashboard" data-section="dashboard" data-i18n="dashboard">Dashboard</a>
+            <a class="nav-item" href="#watchlist" data-section="watchlist" data-i18n="watchlist">Watchlist</a>
             <a class="nav-item" href="#schedule" data-section="schedule" data-i18n="schedule">Schedule</a>
             <a class="nav-item" href="#actions" data-section="actions" data-i18n="actions">Actions</a>
             <a class="nav-item" href="#status" data-section="status" data-i18n="status">Status</a>
@@ -40,7 +41,12 @@
       </aside>
 
       <main class="content">
-        <section id="watchlist" class="panel active-section">
+        <section id="dashboard" class="panel active-section">
+          <h2 data-i18n="dashboard">Dashboard</h2>
+          <div id="cardGrid" class="card-grid"></div>
+        </section>
+
+        <section id="watchlist" class="panel">
           <h2 data-i18n="watchlist">Watchlist</h2>
           <div id="symbolGrid" class="symbol-list"></div>
 

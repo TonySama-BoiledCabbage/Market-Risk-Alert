@@ -51,6 +51,44 @@ ALPHAVANTAGE_API_KEY=optional
 QUOTE_SYMBOLS=SPY,QQQ,NVDA,TSLA,SOXX
 ```
 
+## 2.5 Cloud Reports With GitHub Actions
+
+Use this when your computer may be asleep or powered off. GitHub runs the
+report in the cloud and sends it to Telegram.
+
+1. Push this repository to GitHub.
+2. Open the repository on GitHub.
+3. Go to `Settings` -> `Secrets and variables` -> `Actions`.
+4. Add repository secrets:
+
+```text
+TELEGRAM_BOT_TOKEN
+TELEGRAM_CHAT_ID
+ALPHAVANTAGE_API_KEY
+```
+
+`ALPHAVANTAGE_API_KEY` is optional. Without it, the cloud report still runs, but
+it will not fetch fresh stock quotes.
+
+The workflow file is:
+
+```text
+.github/workflows/telegram-reports.yml
+```
+
+It supports:
+
+- Manual test from the GitHub `Actions` tab
+- Daily evening recap
+- Weekday morning advice
+
+Current schedule uses America/Toronto daylight saving time:
+
+- `22:00` local evening recap = `02:00 UTC`
+- `09:45` local morning advice = `13:45 UTC`
+
+When daylight saving time changes, update the UTC cron times in the workflow.
+
 ## 3. Input Format
 
 Your data scraper should output a JSON snapshot like:
@@ -211,3 +249,11 @@ Default alert threshold is `40`.
 - `80-100`: high-risk alert; consider later adding SMS/Pushover fallback
 
 Professional sources receive higher scoring weight than alternative event probabilities. A prediction-market move alone should not drive a portfolio conclusion unless confirmed by price, rates, volatility, options, filings, or company data.
+
+Identical threshold-based alerts are deduplicated by default for `1440` minutes via:
+
+```text
+ALERT_DEDUPE_MINUTES=1440
+```
+
+Scheduled evening and morning reports always send and are not deduplicated.

@@ -37,6 +37,8 @@ DEFAULT_SETTINGS = {
     "alert_duration_hours": 8,
     "fetch_alpha_vantage": False,
 }
+OI_WATCH_THRESHOLD_PCT = 10
+OI_ALERT_THRESHOLD_PCT = 20
 
 
 def python_path() -> str:
@@ -105,6 +107,74 @@ def current_settings() -> dict:
         if extras:
             settings["custom_symbols"] = ",".join(extras)
     return settings
+
+
+def read_snapshot(settings: dict) -> dict:
+    path = Path(str(settings.get("input_path", "")))
+    if not path.exists():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def market_value(item: dict, *fields: str) -> object:
+    for field in fields:
+        if field in item and item[field] is not None:
+            return item[field]
+    return None
+
+
+def to_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(str(value).replace("%", ""))
+    except ValueError:
+        return None
+
+
+def build_dashboard_cards(settings: dict) -> list[dict]:
+    snapshot = read_snapshot(settings)
+    market = snapshot.get("market", {})
+    if not isinstance(market, dict):
+        market = {}
+
+    symbols = [str(item).strip().upper() for item in settings.get("symbols", []) if str(item).strip()]
+    custom = [item.strip().upper() for item in str(settings.get("custom_symbols", "")).split(",") if item.strip()]
+    cards = []
+    for symbol in list(dict.fromkeys(symbols + custom)):
+        item = market.get(symbol, {})
+        if not isinstance(item, dict):
+            item = {}
+        price = market_value(item, "price", "last", "close")
+        change_pct = to_float(market_value(item, "change_pct", "day_change_pct"))
+        oi = market_value(item, "open_interest", "options_open_interest", "oi")
+        oi_change_pct = to_float(market_value(item, "oi_change_pct", "open_interest_change_pct", "options_oi_change_pct"))
+        alert = oi_change_pct is not None and abs(oi_change_pct) >= OI_ALERT_THRESHOLD_PCT
+        watch = oi_change_pct is not None and abs(oi_change_pct) >= OI_WATCH_THRESHOLD_PCT
+        if alert:
+            note = "OI alert"
+        elif watch:
+            note = "OI watch"
+        else:
+            note = "Calm"
+        cards.append(
+            {
+                "symbol": symbol,
+                "price": price,
+                "change_pct": change_pct,
+                "open_interest": oi,
+                "oi_change_pct": oi_change_pct,
+                "alert": alert,
+                "watch": watch,
+                "note": note,
+            }
+        )
+    return cards
 
 
 def save_settings(payload: dict) -> dict:
@@ -218,6 +288,7 @@ class Handler(BaseHTTPRequestHandler):
                     "alpha_key_valid": alpha_key_valid(),
                     "sample_exists": (PROJECT_DIR / "data" / "latest_signals.json").exists(),
                     "last_run": latest_run_label(),
+                    "dashboard_cards": build_dashboard_cards(settings),
                 }
             )
         else:

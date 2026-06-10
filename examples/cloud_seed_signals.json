@@ -1,0 +1,6 @@
+{
+  "watch_symbols": ["SPY", "QQQ", "NVDA", "TSLA", "SOXX", "US10Y", "VIX"],
+  "signals": [],
+  "polymarket": [],
+  "market": {}
+}
