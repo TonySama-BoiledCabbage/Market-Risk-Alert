@@ -137,7 +137,9 @@ Minimal menu features:
 - `/start` opens the main menu.
 - `Dashboard` shows the current simple setup.
 - `立即触发` can trigger anomaly detection, the evening report, or the morning report.
-- `关注标的` shows the current watchlist.
+- `关注标的` lets you toggle common tickers.
+- `/add AMD` adds any custom ticker.
+- `/remove TSLA` removes a ticker.
 - `汇报时间` shows the current schedule.
 - `状态` shows the integration status.
 
@@ -151,8 +153,20 @@ TELEGRAM_WEBHOOK_SECRET
 ```
 
 `GITHUB_PAT` should be a fine-grained GitHub token with access only to this
-repository and `Actions: Read and write` permission. It is used only to trigger
-the existing GitHub Actions workflow.
+repository. Required repository permissions:
+
+```text
+Actions: Read and write
+Variables: Read and write
+```
+
+It is used to trigger the existing GitHub Actions workflow and to save your
+personal watchlist into repository variables:
+
+```text
+WATCH_SYMBOLS
+QUOTE_SYMBOLS
+```
 
 Create a local Worker config from the example:
 

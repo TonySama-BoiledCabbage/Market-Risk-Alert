@@ -32,8 +32,8 @@ jobs:
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      WATCH_SYMBOLS: SPY,QQQ,NVDA,TSLA,SOXX
-      QUOTE_SYMBOLS: SPY,QQQ,NVDA,TSLA,SOXX
+      WATCH_SYMBOLS: ${{ vars.WATCH_SYMBOLS || 'SPY,QQQ,NVDA,TSLA,SOXX' }}
+      QUOTE_SYMBOLS: ${{ vars.QUOTE_SYMBOLS || 'SPY,QQQ,NVDA,TSLA,SOXX' }}
 
     steps:
       - name: Check out repository
