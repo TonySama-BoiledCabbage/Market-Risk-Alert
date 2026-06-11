@@ -97,13 +97,12 @@ async function handleUpdate(update, env) {
     try {
       await handleCallback(query, env, chatId);
     } catch (error) {
-      await sendMessage(env, chatId, [
-        "操作失败。",
-        "",
-        String(error && error.message ? error.message : error),
-        "",
-        "如果这是第一次使用自助选股，请确认 GITHUB_PAT 具备 repository variables 的读写权限。",
-      ].join("\n"));
+      const message = String(error && error.message ? error.message : error);
+      const lines = ["操作失败。", "", message];
+      if (message.includes("GitHub API failed")) {
+        lines.push("", "请确认 GITHUB_PAT 具备 repository variables 的读写权限。");
+      }
+      await sendMessage(env, chatId, lines.join("\n"));
     }
   }
 }
@@ -448,13 +447,21 @@ async function sendMessage(env, chatId, text, replyMarkup) {
 }
 
 async function editMessage(env, chatId, messageId, text, replyMarkup) {
-  return telegram(env, "editMessageText", {
-    chat_id: chatId,
-    message_id: messageId,
-    text,
-    reply_markup: replyMarkup,
-    disable_web_page_preview: true,
-  });
+  try {
+    return await telegram(env, "editMessageText", {
+      chat_id: chatId,
+      message_id: messageId,
+      text,
+      reply_markup: replyMarkup,
+      disable_web_page_preview: true,
+    });
+  } catch (error) {
+    const message = String(error && error.message ? error.message : error);
+    if (message.includes("message is not modified")) {
+      return { ok: true, unchanged: true };
+    }
+    throw error;
+  }
 }
 
 async function answerCallback(env, callbackQueryId) {
