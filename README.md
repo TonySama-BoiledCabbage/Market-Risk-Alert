@@ -94,12 +94,13 @@ It supports:
 - Weekday morning advice
 - Cloud alert monitor for major price/OI moves
 
-Current schedule uses America/Toronto daylight saving time:
+Current schedule uses redundant UTC cron windows gated by America/Toronto local time:
 
-- `22:00` local evening recap = `02:00 UTC`
-- `09:45` local morning advice = `13:45 UTC`
+- Evening recap sends once when local time is around `22:00`.
+- Morning advice sends once when local time is around `09:45`.
 
-When daylight saving time changes, update the UTC cron times in the workflow.
+The gate avoids duplicate sends by restoring a small `state/` cache. When
+daylight saving time changes, adjust the UTC cron windows if needed.
 
 Cloud anomaly monitoring is handled by:
 

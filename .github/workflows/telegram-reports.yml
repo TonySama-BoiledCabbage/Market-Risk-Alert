@@ -22,13 +22,16 @@ on:
         default: true
         type: boolean
   schedule:
-    # America/Toronto daylight saving time: 22:00 local = 02:00 UTC.
-    - cron: "0 2 * * *"
-    # America/Toronto daylight saving time: 09:45 local = 13:45 UTC.
-    - cron: "45 13 * * 1-5"
+    # GitHub cron uses UTC. These redundant windows are gated in the workflow
+    # so reports are sent once per local day even if one scheduled run is delayed.
+    # America/Toronto daylight saving time: evening 22:00 local ~= 02:00 UTC.
+    - cron: "*/15 2-3 * * *"
+    # America/Toronto daylight saving time: morning 09:45 local ~= 13:45 UTC.
+    - cron: "*/15 13-15 * * 1-5"
 
 permissions:
   contents: read
+  actions: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -54,6 +57,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Restore report schedule state
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: telegram-report-state-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            telegram-report-state-${{ runner.os }}-
+
       - name: Choose report mode
         id: mode
         shell: bash
@@ -61,23 +72,61 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "report_mode=${{ inputs.report_mode }}" >> "$GITHUB_OUTPUT"
             echo "input_file=${{ inputs.input_file }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "0 2 * * *" ]; then
-            echo "report_mode=evening" >> "$GITHUB_OUTPUT"
-            echo "input_file=examples/cloud_seed_signals.json" >> "$GITHUB_OUTPUT"
-          else
-            echo "report_mode=morning" >> "$GITHUB_OUTPUT"
-            echo "input_file=examples/cloud_seed_signals.json" >> "$GITHUB_OUTPUT"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "state_key=manual" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from datetime import datetime, time
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          now = datetime.now(ZoneInfo("America/Toronto"))
+          mode = ""
+
+          if now.weekday() < 5 and time(9, 40) <= now.time() <= time(10, 45):
+              mode = "morning"
+          elif time(21, 50) <= now.time() <= time(23, 15):
+              mode = "evening"
+
+          state_path = Path("state/report_schedule_state.json")
+          state = {}
+          if state_path.exists():
+              try:
+                  state = json.loads(state_path.read_text(encoding="utf-8"))
+              except Exception:
+                  state = {}
+
+          state_key = f"{now.date()}:{mode}" if mode else ""
+          already_sent = bool(state_key and state.get(state_key))
+          should_run = bool(mode and not already_sent)
+
+          print(f"report_mode={mode}")
+          print("input_file=examples/cloud_seed_signals.json")
+          print(f"should_run={str(should_run).lower()}")
+          print(f"state_key={state_key}")
+          print(f"local_time={now.isoformat()}")
+          PY
+
+      - name: Report skipped schedule gate
+        if: steps.mode.outputs.should_run != 'true'
+        shell: bash
+        run: |
+          echo "Scheduled run skipped by local-time gate."
+          echo "Local time: ${{ steps.mode.outputs.local_time }}"
+
       - name: Send Telegram report
+        if: steps.mode.outputs.should_run == 'true'
         shell: bash
         run: |
           ARGS="--input ${{ steps.mode.outputs.input_file }} --report-mode ${{ steps.mode.outputs.report_mode }}"
 
           if [ "${{ steps.mode.outputs.report_mode }}" = "alert" ]; then
             ARGS="$ARGS --fetch-yahoo --min-score 60"
-          elif [ -n "$ALPHAVANTAGE_API_KEY" ]; then
-            ARGS="$ARGS --fetch-alpha-vantage"
+          else
+            ARGS="$ARGS --fetch-yahoo"
           fi
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send_to_telegram }}" != "true" ]; then
@@ -85,3 +134,38 @@ jobs:
           fi
 
           python market_alert.py $ARGS
+
+      - name: Mark scheduled report sent
+        if: steps.mode.outputs.should_run == 'true' && github.event_name == 'schedule'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          key = "${{ steps.mode.outputs.state_key }}"
+          path = Path("state/report_schedule_state.json")
+          path.parent.mkdir(parents=True, exist_ok=True)
+          state = {}
+          if path.exists():
+              try:
+                  state = json.loads(path.read_text(encoding="utf-8"))
+              except Exception:
+                  state = {}
+          state[key] = datetime.now(timezone.utc).isoformat()
+          path.write_text(json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+          PY
+
+      - name: Ensure report state folder exists
+        if: always()
+        shell: bash
+        run: mkdir -p state
+
+      - name: Save report schedule state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: telegram-report-state-${{ runner.os }}-${{ github.run_id }}
