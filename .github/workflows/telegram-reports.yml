@@ -125,6 +125,8 @@ jobs:
 
           if [ "${{ steps.mode.outputs.report_mode }}" = "alert" ]; then
             ARGS="$ARGS --fetch-yahoo --min-score 60"
+          elif [ -n "$ALPHAVANTAGE_API_KEY" ]; then
+            ARGS="$ARGS --fetch-alpha-vantage"
           else
             ARGS="$ARGS --fetch-yahoo"
           fi

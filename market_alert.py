@@ -585,7 +585,12 @@ def severity_for(score: int) -> str:
     return "记录"
 
 
-def score_events(snapshot: dict[str, Any], previous: dict[str, Any]) -> list[EventScore]:
+def score_events(
+    snapshot: dict[str, Any],
+    previous: dict[str, Any],
+    include_price_signals: bool = True,
+    include_oi_signals: bool = True,
+) -> list[EventScore]:
     market = snapshot.get("market", {})
     if not isinstance(market, dict):
         market = {}
@@ -685,8 +690,10 @@ def score_events(snapshot: dict[str, Any], previous: dict[str, Any]) -> list[Eve
             )
         )
 
-    results.extend(score_price_signals(snapshot))
-    results.extend(score_oi_signals(snapshot))
+    if include_price_signals:
+        results.extend(score_price_signals(snapshot))
+    if include_oi_signals:
+        results.extend(score_oi_signals(snapshot))
     return sorted(results, key=lambda item: item.score, reverse=True)
 
 
@@ -745,6 +752,30 @@ def format_market_line(symbol: str, data: Any) -> str | None:
     return f"{symbol}: {' / '.join(pieces)}"
 
 
+def quote_coverage_text(snapshot: dict[str, Any], market: dict[str, Any]) -> str | None:
+    expected = [
+        symbol
+        for symbol in get_watch_symbols(snapshot)
+        if symbol in PRICE_ALERT_THRESHOLDS_PCT or symbol in DEFAULT_QUOTE_SYMBOLS
+    ]
+    if not expected:
+        return None
+
+    found = [
+        symbol
+        for symbol in expected
+        if isinstance(market.get(symbol), dict)
+        and (
+            market[symbol].get("change_pct") is not None
+            or market[symbol].get("price") is not None
+        )
+    ]
+    if len(found) == len(expected):
+        return f"行情覆盖：{len(found)}/{len(expected)}"
+    missing = [symbol for symbol in expected if symbol not in found]
+    return f"行情覆盖：{len(found)}/{len(expected)}；缺少 {', '.join(missing)}，本次市场变化不完整"
+
+
 def portfolio_bias(results: list[EventScore]) -> str:
     top_score = results[0].score if results else 0
     if top_score >= 80:
@@ -782,6 +813,9 @@ def format_report(snapshot: dict[str, Any], results: list[EventScore], report_mo
     if market_lines:
         lines.extend(["", "持仓与市场变化："])
         lines.extend(f"- {line}" for line in market_lines[:10])
+        coverage = quote_coverage_text(snapshot, market)
+        if coverage:
+            lines.append(f"- {coverage}")
 
     if results:
         lines.extend(["", "主要信号："])
@@ -929,7 +963,13 @@ def main() -> int:
     snapshot = read_json(args.input)
     enrich_market_data(snapshot, args.fetch_alpha_vantage, args.fetch_yahoo)
     previous = read_json(args.state) if args.state.exists() else {}
-    results = score_events(snapshot, previous)
+    include_alert_only_signals = args.report_mode == "alert"
+    results = score_events(
+        snapshot,
+        previous,
+        include_price_signals=include_alert_only_signals,
+        include_oi_signals=include_alert_only_signals,
+    )
     if args.report_mode == "alert":
         min_score = 0 if args.force else args.min_score
         message = format_alert(results, min_score)
